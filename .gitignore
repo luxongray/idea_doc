@@ -1,0 +1,26 @@
+# 依赖与构建产物
+node_modules/
+dist/
+dist-ssr/
+target/
+
+# 包管理器缓存
+.pnpm-store/
+
+# 环境变量：本地配置不入库，只保留示例文件
+.env
+.env.*.local
+*.local
+!.env.example
+
+# 编辑器与系统文件
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# 日志与临时文件
+*.log
+logs/
+*.tmp

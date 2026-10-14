@@ -1,0 +1,15 @@
+@import 'tailwindcss';
+
+/* 全局主题变量：统一项目的品牌色与基础字体，供 Tailwind 工具类读取（如 text-brand / bg-brand） */
+@theme {
+  --color-brand: #4f46e5;
+  --color-brand-dark: #4338ca;
+  --font-sans: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
+/* 让根节点撑满视口，避免页面高度塌陷导致布局错位 */
+html,
+body,
+#root {
+  height: 100%;
+}
