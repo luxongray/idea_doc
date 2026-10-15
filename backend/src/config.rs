@@ -48,8 +48,10 @@ impl AppConfig {
             .collect();
 
         Ok(Self {
-            service_name: env::var("SERVICE_NAME").unwrap_or_else(|_| "idea-doc-server".to_string()),
-            version: env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string()),
+            service_name: env::var("SERVICE_NAME")
+                .unwrap_or_else(|_| "idea-doc-server".to_string()),
+            version: env::var("CARGO_PKG_VERSION")
+                .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string()),
             server_host,
             server_port,
             database_url,

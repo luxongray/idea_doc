@@ -7,6 +7,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use serde::{Deserialize, Serialize};
+use uuid::fmt::Hyphenated;
 
 use crate::api::ApiResponse;
 use crate::document::{self, BlockPayload, DocumentBlock, DocumentDetail, DocumentSummary, Draft};
@@ -40,7 +41,7 @@ pub struct RenameDocumentRequest {
 #[derive(Debug, Deserialize)]
 pub struct ReorderDocumentsRequest {
     /// 按拖拽结果排列的文档 id
-    pub ids: Vec<i64>,
+    pub ids: Vec<Hyphenated>,
 }
 
 /// 推送快照的请求体
@@ -108,13 +109,16 @@ pub async fn create_document(
 /// 否则用户刷新页面会看到落库之前的旧内容。
 ///
 /// @param state  全局应用状态
-/// @param doc_id 路径中的文档 id
+/// @param raw_id 路径中的文档 id（UUID 字符串）
 /// @return 文档详情（含全部块）
 /// @throws AppError 文档不存在时返回 1003，数据库访问失败时返回 1001
 pub async fn get_document(
     State(state): State<AppState>,
-    Path(doc_id): Path<i64>,
+    Path(raw_id): Path<String>,
 ) -> Result<Json<ApiResponse<DocumentDetail>>, AppError> {
+    // 路径里的 id 来自外部，先校验格式，非法就按参数错误返回
+    let doc_id = parse_doc_id(&raw_id)?;
+
     // 步骤 1：读库；文档不存在或已逻辑删除直接报 404
     let mut detail = document::detail(&state.pool, doc_id)
         .await?
@@ -132,15 +136,18 @@ pub async fn get_document(
 /// 重命名文档
 ///
 /// @param state  全局应用状态
-/// @param doc_id 路径中的文档 id
+/// @param raw_id 路径中的文档 id（UUID 字符串）
 /// @param body   请求体，携带新标题
 /// @return 更新后的列表项信息
 /// @throws AppError 标题为空返回 1002，文档不存在返回 1003
 pub async fn rename_document(
     State(state): State<AppState>,
-    Path(doc_id): Path<i64>,
+    Path(raw_id): Path<String>,
     Json(body): Json<RenameDocumentRequest>,
 ) -> Result<Json<ApiResponse<DocumentSummary>>, AppError> {
+    // 路径里的 id 来自外部，先校验格式，非法就按参数错误返回
+    let doc_id = parse_doc_id(&raw_id)?;
+
     // 步骤 1：标题必须非空，否则界面会出现无法辨认的条目
     let title = body.title.trim();
     if title.is_empty() {
@@ -186,13 +193,16 @@ pub async fn reorder_documents(
 /// 只把 is_deleted 置为 1，doc_block 里的内容保留，便于后续做恢复。
 ///
 /// @param state  全局应用状态
-/// @param doc_id 路径中的文档 id
+/// @param raw_id 路径中的文档 id（UUID 字符串）
 /// @return 删除成功时返回空数据
 /// @throws AppError 文档不存在时返回 1003
 pub async fn delete_document(
     State(state): State<AppState>,
-    Path(doc_id): Path<i64>,
+    Path(raw_id): Path<String>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
+    // 路径里的 id 来自外部，先校验格式，非法就按参数错误返回
+    let doc_id = parse_doc_id(&raw_id)?;
+
     // 步骤 1：逻辑删除数据库记录
     if !document::soft_delete(&state.pool, doc_id).await? {
         return Err(AppError::NotFound(format!("文档 {doc_id} 不存在或已删除")));
@@ -210,15 +220,18 @@ pub async fn delete_document(
 /// flush = true 时先更新缓存，再把这份快照整体落库——前端切换文档走的就是这条路。
 ///
 /// @param state  全局应用状态
-/// @param doc_id 路径中的文档 id
+/// @param raw_id 路径中的文档 id（UUID 字符串）
 /// @param body   请求体，携带标题、全部块与是否立即落库
 /// @return 本次是否已经落库
 /// @throws AppError 文档不存在时返回 1003，数据库访问失败时返回 1001
 pub async fn save_snapshot(
     State(state): State<AppState>,
-    Path(doc_id): Path<i64>,
+    Path(raw_id): Path<String>,
     Json(body): Json<SnapshotRequest>,
 ) -> Result<Json<ApiResponse<SnapshotAck>>, AppError> {
+    // 路径里的 id 来自外部，先校验格式，非法就按参数错误返回
+    let doc_id = parse_doc_id(&raw_id)?;
+
     // 步骤 1：文档必须存在且未删除，否则拒绝保存
     if !document::exists(&state.pool, doc_id).await? {
         return Err(AppError::NotFound(format!("文档 {doc_id} 不存在或已删除")));
@@ -247,13 +260,16 @@ pub async fn save_snapshot(
 /// 这里刻意不查数据库，保证 5 秒一次的高频请求足够轻。
 ///
 /// @param state  全局应用状态
-/// @param doc_id 前端当前正在查看的文档 id
+/// @param raw_id 前端当前正在查看的文档 id（UUID 字符串）
 /// @return 心跳处理完成时返回空数据
 /// @throws AppError 落库失败时抛出
 pub async fn heartbeat(
     State(state): State<AppState>,
-    Path(doc_id): Path<i64>,
+    Path(raw_id): Path<String>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
+    // 路径里的 id 来自外部，先校验格式，非法就按参数错误返回
+    let doc_id = parse_doc_id(&raw_id)?;
+
     if let Some(evicted) = state.drafts.touch(doc_id) {
         persist_draft(&state, &evicted).await?;
     }
@@ -269,7 +285,7 @@ pub async fn heartbeat(
 /// @throws AppError 数据库访问失败时抛出
 async fn persist_draft(state: &AppState, draft: &Draft) -> Result<(), AppError> {
     tracing::info!(
-        doc_id = draft.doc_id,
+        doc_id = %draft.doc_id,
         blocks = draft.blocks.len(),
         "开始把草稿落库"
     );
@@ -279,8 +295,8 @@ async fn persist_draft(state: &AppState, draft: &Draft) -> Result<(), AppError> 
 
 /// 把缓存里的草稿转换成响应结构
 ///
-/// 草稿里的块还没有数据库主键，这里按顺序临时生成 id 作为前端锚点。
-/// 它只在「刷新页面且内容尚未落库」的短暂窗口里出现，落库后会被真实 id 取代。
+/// 草稿里的块已经带着自己的 uuid（由前端生成），直接透传即可，
+/// 因此刷新页面读到的块 id 与落库后的行主键完全一致。
 ///
 /// @param draft 内存中的草稿
 /// @return 可直接返回给前端的块列表
@@ -288,17 +304,30 @@ fn draft_to_blocks(draft: &Draft) -> Vec<DocumentBlock> {
     draft
         .blocks
         .iter()
-        .enumerate()
-        .map(|(index, block)| match block {
-            BlockPayload::Heading { level, text } => DocumentBlock::Heading {
-                id: format!("draft-{index}"),
+        .map(|block| match block {
+            BlockPayload::Heading { id, level, text } => DocumentBlock::Heading {
+                id: id.to_string(),
                 level: (*level).clamp(MIN_HEADING_LEVEL, MAX_HEADING_LEVEL),
                 text: text.clone(),
             },
-            BlockPayload::Paragraph { segments } => DocumentBlock::Paragraph {
-                id: format!("draft-{index}"),
+            BlockPayload::Paragraph { id, segments } => DocumentBlock::Paragraph {
+                id: id.to_string(),
                 segments: segments.clone(),
             },
         })
         .collect()
+}
+
+/// 把路径参数里的文档 id 解析成 uuid
+///
+/// 统一在这里做格式校验：直接用 axum 的 Path<Hyphenated> 时，id 非法会返回
+/// 纯文本 400，绕过项目统一的响应结构；包一层之后再非法也走 AppError，
+/// 前端拿到的仍是 { code, message, data }。
+///
+/// @param raw 路径里原始的 id 字符串
+/// @return 解析成功返回 uuid 的字符串形式
+/// @throws AppError id 不是合法 uuid 时返回 1002
+fn parse_doc_id(raw: &str) -> Result<Hyphenated, AppError> {
+    raw.parse::<Hyphenated>()
+        .map_err(|_| AppError::BadRequest(format!("文档 id 格式不合法：{raw}")))
 }

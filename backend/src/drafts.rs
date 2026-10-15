@@ -11,6 +11,8 @@
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use uuid::fmt::Hyphenated;
+
 use crate::document::{BlockPayload, Draft};
 
 /// 文档草稿缓存
@@ -36,7 +38,9 @@ impl DraftStore {
     ///
     /// @return 互斥锁守卫
     fn lock(&self) -> MutexGuard<'_, Option<Draft>> {
-        self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// 写入一份新的快照
@@ -48,7 +52,12 @@ impl DraftStore {
     /// @param title  文档标题
     /// @param blocks 全部内容块
     /// @return 被顶替掉的旧草稿；没有或属于同一篇文档时返回 None
-    pub fn put(&self, doc_id: i64, title: String, blocks: Vec<BlockPayload>) -> Option<Draft> {
+    pub fn put(
+        &self,
+        doc_id: Hyphenated,
+        title: String,
+        blocks: Vec<BlockPayload>,
+    ) -> Option<Draft> {
         let mut guard = self.lock();
 
         // 换文档时先摘掉旧草稿，交给调用方落库
@@ -71,7 +80,7 @@ impl DraftStore {
     ///
     /// @param doc_id 当前前端正在查看的文档 id
     /// @return 需要先落库的旧草稿；心跳文档与缓存一致时返回 None
-    pub fn touch(&self, doc_id: i64) -> Option<Draft> {
+    pub fn touch(&self, doc_id: Hyphenated) -> Option<Draft> {
         let mut guard = self.lock();
 
         match guard.as_mut() {
@@ -93,7 +102,7 @@ impl DraftStore {
     ///
     /// @param doc_id 文档 id
     /// @param title  新标题
-    pub fn set_title(&self, doc_id: i64, title: &str) {
+    pub fn set_title(&self, doc_id: Hyphenated, title: &str) {
         let mut guard = self.lock();
 
         if let Some(existing) = guard.as_mut()
@@ -109,7 +118,7 @@ impl DraftStore {
     ///
     /// @param doc_id 文档 id
     /// @return 该文档的草稿；不存在或不是这一篇时返回 None
-    pub fn take(&self, doc_id: i64) -> Option<Draft> {
+    pub fn take(&self, doc_id: Hyphenated) -> Option<Draft> {
         let mut guard = self.lock();
 
         match guard.as_ref() {
@@ -124,7 +133,7 @@ impl DraftStore {
     ///
     /// @param doc_id 文档 id
     /// @return 该文档的草稿副本；不存在或不是这一篇时返回 None
-    pub fn peek(&self, doc_id: i64) -> Option<Draft> {
+    pub fn peek(&self, doc_id: Hyphenated) -> Option<Draft> {
         let guard = self.lock();
 
         match guard.as_ref() {

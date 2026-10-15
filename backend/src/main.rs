@@ -121,11 +121,7 @@ fn build_cors_layer(config: &AppConfig) -> anyhow::Result<CorsLayer> {
             Method::PATCH,
             Method::DELETE,
         ])
-        .allow_headers([
-            header::CONTENT_TYPE,
-            header::AUTHORIZATION,
-            header::ACCEPT,
-        ])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
         .allow_credentials(true))
 }
 
@@ -147,13 +143,13 @@ fn spawn_draft_sweeper(state: AppState) {
             };
 
             tracing::info!(
-                doc_id = draft.doc_id,
+                doc_id = %draft.doc_id,
                 "前端心跳已超时，开始把草稿落库"
             );
 
             if let Err(err) = document::persist(&state.pool, &draft).await {
                 tracing::error!(
-                    doc_id = draft.doc_id,
+                    doc_id = %draft.doc_id,
                     error = %err,
                     "心跳超时草稿落库失败"
                 );
@@ -176,9 +172,9 @@ async fn shutdown_signal() {
 async fn flush_pending_drafts(state: &AppState) {
     while let Some(draft) = state.drafts.take_any() {
         match document::persist(&state.pool, &draft).await {
-            Ok(()) => tracing::info!(doc_id = draft.doc_id, "退出前草稿已落库"),
+            Ok(()) => tracing::info!(doc_id = %draft.doc_id, "退出前草稿已落库"),
             Err(err) => {
-                tracing::error!(doc_id = draft.doc_id, error = %err, "退出前草稿落库失败")
+                tracing::error!(doc_id = %draft.doc_id, error = %err, "退出前草稿落库失败")
             }
         }
     }

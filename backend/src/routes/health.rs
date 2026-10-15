@@ -55,7 +55,9 @@ pub async fn health_check(State(state): State<AppState>) -> Json<ApiResponse<Hea
 /// @param state 全局应用状态
 /// @return 数据库正常时返回 ok 标记
 /// @throws AppError 数据库不可达时抛出，由统一错误处理转为 500 响应
-pub async fn db_ping(State(state): State<AppState>) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+pub async fn db_ping(
+    State(state): State<AppState>,
+) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     // 执行最轻量的探测语句，验证连接池到 MySQL 的链路
     db::ping(&state.pool).await?;
 

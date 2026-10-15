@@ -25,17 +25,40 @@ export interface BlockEditResult {
   caretOffset: number
 }
 
-/** 新块 id 的自增序号，与随机片段配合，避免同一毫秒内生成重复 id */
-let blockSeq = 0
+/**
+ * 生成一个 UUIDv7 字符串
+ *
+ * 前 48 位是毫秒时间戳，同一时刻生成的 id 因此仍然保持字典序递增，
+ * 与数据库里 doc / doc_block 主键的格式完全一致；其余位用随机数填充，
+ * 保证同一毫秒内连续生成也不会重复。
+ *
+ * @return 形如 01a13cdb-cc00-7000-8000-000000000001 的字符串
+ */
+function uuidV7(): string {
+  // 步骤 1：毫秒时间戳转成定长 12 位十六进制，占据最前面 48 位
+  const timestamp = Date.now().toString(16).padStart(12, '0')
+
+  // 步骤 2：取 10 个随机字节作为剩余位，转成 20 位十六进制
+  const random = new Uint8Array(10)
+  crypto.getRandomValues(random)
+  const hex = Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('')
+
+  // 步骤 3：第 13 位固定为版本号 7，第 17 位的高两位固定为 10（RFC 变体位），
+  // 其余按 8-4-4-4-12 分组拼装
+  const variant = ((Number.parseInt(hex[3], 16) & 0x3) | 0x8).toString(16)
+  return `${timestamp.slice(0, 8)}-${timestamp.slice(8, 12)}-7${hex.slice(0, 3)}-${variant}${hex.slice(4, 7)}-${hex.slice(7, 19)}`
+}
 
 /**
  * 生成一个新的块 id
  *
+ * 块一创建就要有稳定标识：它既是前端 DOM 锚点，也是落库后的行主键，
+ * 所以直接生成 UUIDv7，让前后端共用同一个 id，保存时才能按 id 做增量更新。
+ *
  * @return 新的唯一块 id
  */
 export function createBlockId(): string {
-  blockSeq += 1
-  return `block-${Math.random().toString(36).slice(2, 8)}-${blockSeq}`
+  return uuidV7()
 }
 
 /**

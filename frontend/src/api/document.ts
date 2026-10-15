@@ -72,8 +72,8 @@ export function deleteDocument(id: string): Promise<void> {
 export function reorderDocuments(ids: string[]): Promise<void> {
   return request<void>('/documents/order', {
     method: 'PUT',
-    // 对外统一用字符串表示 id，后端要的是整数，在接口边界做一次转换
-    body: JSON.stringify({ ids: ids.map((id) => Number(id)) }),
+    // 文档 id 是 UUID 字符串，与后端的表示一致，直接透传
+    body: JSON.stringify({ ids }),
   })
 }
 
