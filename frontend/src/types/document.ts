@@ -86,3 +86,17 @@ export interface DocDocument {
   /** 按顺序排列的内容块 */
   blocks: DocBlock[]
 }
+
+/**
+ * 文档列表项
+ *
+ * 侧边栏只需要展示标题与时间，不必为了列个表就把整篇正文都拉下来。
+ */
+export interface DocSummary {
+  /** 文档唯一标识 */
+  id: string
+  /** 文档标题 */
+  title: string
+  /** 最近更新时间 */
+  updatedAt: string
+}

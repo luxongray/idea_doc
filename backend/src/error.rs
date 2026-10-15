@@ -31,6 +31,8 @@ pub enum AppError {
     Internal(String),
 }
 
+// 测试构建下不会走到 HTTP 响应转换这条链路，状态码与业务码映射会被判成未使用
+#[allow(dead_code)]
 impl AppError {
     /// 映射为对应的 HTTP 状态码
     ///

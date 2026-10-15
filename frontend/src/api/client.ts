@@ -31,7 +31,7 @@ export class ApiError extends Error {
 }
 
 /** 接口基地址：开发环境走 Vite 代理，生产环境可通过 VITE_API_BASE_URL 覆盖 */
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 /**
  * 发送 HTTP 请求并解包后端统一响应结构

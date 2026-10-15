@@ -14,6 +14,8 @@ pub struct ApiResponse<T> {
     pub data: Option<T>,
 }
 
+// fail 只被错误响应的构造路径调用，测试构建下同理会判成未使用
+#[allow(dead_code)]
 impl<T> ApiResponse<T> {
     /// 构造一个成功响应
     ///

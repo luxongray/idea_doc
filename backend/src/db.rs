@@ -2,7 +2,14 @@ use std::time::Duration;
 
 use anyhow::Context;
 use sqlx::MySqlPool;
-use sqlx::mysql::MySqlPoolOptions;
+use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions};
+
+/// 数据库会话时区
+///
+/// sqlx 默认把会话时区设成 UTC，于是数据库写出的 CURRENT_TIMESTAMP 是 UTC 时间，
+/// 与日常看到的墙上时间差 8 小时（下午 3 点会被存成早上 7 点）。
+/// 这里显式改成本地时区，让 created_at / updated_at 存的就是本地时间。
+const DB_TIMEZONE: &str = "+08:00";
 
 /// 创建 MySQL 连接池
 ///
@@ -12,13 +19,19 @@ use sqlx::mysql::MySqlPoolOptions;
 /// @return 可复用的 MySQL 连接池
 /// @throws anyhow::Error 连接串非法或数据库不可达时抛出
 pub async fn init_pool(database_url: &str) -> anyhow::Result<MySqlPool> {
-    // 步骤 1：按业务预期配置连接池容量与超时，避免请求堆积时无限等待
+    // 步骤 1：解析连接串并覆盖会话时区，避免库里存下 UTC 时间
+    let options = database_url
+        .parse::<MySqlConnectOptions>()
+        .context("DATABASE_URL 格式非法，请检查 backend/.env")?
+        .timezone(Some(DB_TIMEZONE.to_string()));
+
+    // 步骤 2：按业务预期配置连接池容量与超时，避免请求堆积时无限等待
     let pool = MySqlPoolOptions::new()
         .max_connections(10)
         .min_connections(1)
         .acquire_timeout(Duration::from_secs(5))
         .idle_timeout(Duration::from_secs(600))
-        .connect(database_url)
+        .connect_with(options)
         .await
         .context("连接 MySQL 失败，请检查 backend/.env 中的 DATABASE_URL 是否正确")?;
 

@@ -1,13 +1,14 @@
 use axum::Router;
-use axum::routing::get;
+use axum::routing::{get, post, put};
 
 use crate::state::AppState;
 
+mod document;
 mod health;
 
 /// 装配全部 HTTP 路由
 ///
-/// @param state 全局应用状态，供各 handler 读取连接池与配置
+/// @param state 全局应用状态，供各 handler 读取连接池、配置与草稿缓存
 /// @return 已注册所有接口、可直接交给 axum::serve 的路由
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -15,5 +16,23 @@ pub fn router(state: AppState) -> Router {
         .route("/api/health", get(health::health_check))
         // 数据库连通性探测：数据库不可用时返回明确错误
         .route("/api/db/ping", get(health::db_ping))
+        // 文档列表与新建
+        .route(
+            "/api/documents",
+            get(document::list_documents).post(document::create_document),
+        )
+        // 拖拽重排：静态路径要写在 {id} 之前，匹配优先级更明确
+        .route("/api/documents/order", put(document::reorder_documents))
+        // 单篇文档的读取、改名与逻辑删除
+        .route(
+            "/api/documents/{id}",
+            get(document::get_document)
+                .patch(document::rename_document)
+                .delete(document::delete_document),
+        )
+        // 编辑期推送全文快照，flush = true 时同时落库
+        .route("/api/documents/{id}/snapshot", put(document::save_snapshot))
+        // 编辑期心跳，超时未收到则由后台任务落库
+        .route("/api/documents/{id}/heartbeat", post(document::heartbeat))
         .with_state(state)
 }

@@ -1,9 +1,30 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 
 import type { OutlineNode } from '@/utils/outline'
 
 /** 每深一级标题的缩进量（px），随大纲字号放大而略微加大，让层级差更明显 */
 const INDENT_PER_LEVEL = 20
+
+/**
+ * 收集所有「带子级」的标题 id
+ *
+ * 用于「全部折叠 / 全部展开」：只有存在子级的标题才需要折叠，叶子节点收起来没有意义。
+ *
+ * @param nodes 大纲节点列表
+ * @returns 所有存在子级的节点 id，按文档顺序排列
+ */
+function collectBranchIds(nodes: OutlineNode[]): string[] {
+  const ids: string[] = []
+
+  for (const node of nodes) {
+    if (node.children.length > 0) {
+      ids.push(node.id)
+      ids.push(...collectBranchIds(node.children))
+    }
+  }
+
+  return ids
+}
 
 /**
  * 右侧大纲导航
@@ -27,6 +48,12 @@ export function DocOutline({
   // 记录被折叠的标题 id，默认全部展开
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(new Set())
 
+  // 所有带子级的标题 id，用于「全部折叠 / 全部展开」
+  const branchIds = useMemo(() => collectBranchIds(nodes), [nodes])
+
+  // 只有所有带子级的标题都收起时，才算「已全部折叠」
+  const allCollapsed = branchIds.length > 0 && branchIds.every((id) => collapsedIds.has(id))
+
   // 当前高亮项对应的按钮，用于在高亮项滚出大纲可视区时把它拉回视野
   const activeItemRef = useRef<HTMLButtonElement | null>(null)
 
@@ -34,6 +61,13 @@ export function DocOutline({
     // block: 'nearest' 表示只有当高亮项已经不在可视区内时才滚动，避免每次都强行居中
     activeItemRef.current?.scrollIntoView({ block: 'nearest' })
   }, [activeId])
+
+  /**
+   * 在「全部折叠」与「全部展开」之间切换
+   */
+  const toggleAllCollapsed = () => {
+    setCollapsedIds(allCollapsed ? new Set() : new Set(branchIds))
+  }
 
   /**
    * 切换某个标题子级的折叠状态
@@ -70,7 +104,43 @@ export function DocOutline({
       }}
     >
       {/* 标题固定不滚动，滚动只发生在其下的列表里，滚动条才能与列表上下对齐 */}
-      <h2 className="mb-4 shrink-0 text-base font-semibold text-slate-900">大纲</h2>
+      <div className="mb-4 flex shrink-0 items-center gap-1.5">
+        <h2 className="text-base font-semibold text-slate-900">大纲</h2>
+        {/* 有子级标题时才显示：一键收起或展开整棵大纲 */}
+        {branchIds.length > 0 && (
+          <button
+            type="button"
+            onClick={toggleAllCollapsed}
+            title={allCollapsed ? '全部展开' : '全部折叠'}
+            aria-label={allCollapsed ? '全部展开' : '全部折叠'}
+            className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          >
+            <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
+              {allCollapsed ? (
+                // 已全部收起：箭头朝外，表示接下来是展开
+                <path
+                  d="M4.5 6.5 8 3l3.5 3.5M4.5 9.5 8 13l3.5-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ) : (
+                // 尚未全部收起：箭头朝内，表示接下来是折叠
+                <path
+                  d="M4.5 3.5 8 7l3.5-3.5M4.5 12.5 8 9l3.5 3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+            </svg>
+          </button>
+        )}
+      </div>
       {/*
         列表：scrollbar-gutter: stable 让这一栏始终预留滚动条的宽度，
         这样有没有滚动条时大纲内容的可用宽度都一样，不会一出现滚动条就把文字挤窄。
