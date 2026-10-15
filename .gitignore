@@ -24,3 +24,4 @@ Thumbs.db
 *.log
 logs/
 *.tmp
+.playwright-mcp

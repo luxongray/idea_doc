@@ -13,3 +13,74 @@ body,
 #root {
   height: 100%;
 }
+
+body {
+  @apply bg-white font-sans text-slate-800 antialiased;
+}
+
+/*
+ * 滚动条：细窄的胶囊滑块 + 两端的小三角箭头。
+ * 收窄到 8px，滑块用圆角与中性灰，轨道只留一层极浅的底色，
+ * 整体是一条轻量细线，不抢正文视线。
+ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+/* 轨道：极浅的中性灰，只留一条细线感 */
+::-webkit-scrollbar-track {
+  background-color: #f5f5f5;
+}
+
+/* 滑块：中性灰胶囊，悬停时加深 */
+::-webkit-scrollbar-thumb {
+  background-color: #a3a3a3;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #737373;
+}
+
+/*
+ * 两端的箭头按钮：透明底色，只画一个小三角，避免出现笨重的灰色方块。
+ * :single-button 必须显式 display: block，否则浏览器不会绘制。
+ */
+::-webkit-scrollbar-button:single-button {
+  display: block;
+  height: 9px;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 6px 6px;
+}
+
+::-webkit-scrollbar-button:single-button:hover {
+  background-color: #e5e5e5;
+}
+
+/* 上下箭头：用内联 SVG 画三角，避免额外的图片请求 */
+::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M4 1.8 7 6H1z' fill='%23a3a3a3'/%3E%3C/svg%3E");
+}
+
+::-webkit-scrollbar-button:single-button:vertical:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M4 6.2 1 2h6z' fill='%23a3a3a3'/%3E%3C/svg%3E");
+}
+
+/* 左右箭头：横向滚动条时使用 */
+::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  width: 9px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M1.8 4 6 1v6z' fill='%23a3a3a3'/%3E%3C/svg%3E");
+}
+
+::-webkit-scrollbar-button:single-button:horizontal:increment {
+  width: 9px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M6.2 4 2 1v6z' fill='%23a3a3a3'/%3E%3C/svg%3E");
+}
+
+/* 横竖滚动条交汇处，避免露出白底 */
+::-webkit-scrollbar-corner {
+  background-color: transparent;
+}
