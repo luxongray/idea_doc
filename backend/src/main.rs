@@ -15,6 +15,7 @@ mod api;
 mod config;
 mod db;
 mod document;
+mod document_version;
 mod drafts;
 mod error;
 mod routes;
@@ -48,6 +49,7 @@ async fn main() -> anyhow::Result<()> {
         pool,
         config: Arc::new(app_config.clone()),
         drafts: Arc::new(DraftStore::new()),
+        document_writes: Arc::new(tokio::sync::Mutex::new(())),
     };
 
     // 步骤 5：启动后台任务，负责把心跳超时的草稿落库
@@ -137,6 +139,9 @@ fn spawn_draft_sweeper(state: AppState) {
 
         loop {
             ticker.tick().await;
+
+            // 取出草稿与落库必须处于同一协调区，避免恢复后写回旧内容。
+            let _write_guard = state.document_writes.lock().await;
 
             let Some(draft) = state.drafts.take_stale(DRAFT_IDLE_TIMEOUT) else {
                 continue;

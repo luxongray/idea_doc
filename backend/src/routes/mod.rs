@@ -4,6 +4,7 @@ use axum::routing::{get, post, put};
 use crate::state::AppState;
 
 mod document;
+mod document_version;
 mod health;
 
 /// 装配全部 HTTP 路由
@@ -34,5 +35,22 @@ pub fn router(state: AppState) -> Router {
         .route("/api/documents/{id}/snapshot", put(document::save_snapshot))
         // 编辑期心跳，超时未收到则由后台任务落库
         .route("/api/documents/{id}/heartbeat", post(document::heartbeat))
+        // 手动版本链、历史内容、当前差异与恢复草稿。
+        .route(
+            "/api/documents/{id}/versions",
+            get(document_version::list).post(document_version::commit),
+        )
+        .route(
+            "/api/documents/{id}/versions/{version}",
+            get(document_version::get),
+        )
+        .route(
+            "/api/documents/{id}/versions/{version}/diff",
+            post(document_version::diff),
+        )
+        .route(
+            "/api/documents/{id}/versions/{version}/restore",
+            post(document_version::restore),
+        )
         .with_state(state)
 }

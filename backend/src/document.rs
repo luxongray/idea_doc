@@ -58,7 +58,7 @@ struct BlockPlace {
 /// 行内文字片段：普通文字块由若干片段首尾相接组成
 ///
 /// 请求与响应共用这一结构；颜色缺省表示普通文字颜色。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextSegment {
     /// 片段文字
     pub text: String,
@@ -71,7 +71,7 @@ pub struct TextSegment {
 ///
 /// 块 id 由前端生成并原样落库，它既是前端的 DOM 锚点，也是数据库主键；
 /// 块在树上的位置（父块与同级序号）则完全由后端按数组顺序推导，前端不需要关心。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum BlockPayload {
     /// 标题块：level 为 1~6，text 为纯文本
@@ -433,6 +433,22 @@ pub async fn soft_delete(pool: &MySqlPool, doc_id: Hyphenated) -> Result<bool, A
 pub async fn persist(pool: &MySqlPool, draft: &Draft) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
 
+    // 复用事务内保存能力，让手动提交可以原子地保存正文和版本。
+    persist_in_transaction(&mut tx, draft).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// 在调用方事务中保存草稿，供普通保存、版本提交与恢复共同使用。
+///
+/// @param tx 当前数据库事务
+/// @param draft 待保存的完整草稿
+/// @return 保存成功返回 Ok
+/// @throws AppError 数据库访问失败
+pub async fn persist_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    draft: &Draft,
+) -> Result<(), AppError> {
     // 步骤 1：更新标题与修改时间。正文能走到落库这一步，就说明这篇文档确实被改过，
     // 所以即使标题没变也要刷新 updated_at。
     // 文档已被删除时直接放弃这次落库，避免往已删除文档里写块
@@ -440,11 +456,10 @@ pub async fn persist(pool: &MySqlPool, draft: &Draft) -> Result<(), AppError> {
         sqlx::query("UPDATE doc SET title = ?, updated_at = NOW() WHERE id = ? AND is_deleted = 0")
             .bind(&draft.title)
             .bind(draft.doc_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
 
     if updated.rows_affected() == 0 {
-        tx.rollback().await?;
         tracing::warn!(doc_id = %draft.doc_id, "目标文档已被删除，跳过草稿落库");
         return Ok(());
     }
@@ -521,7 +536,7 @@ pub async fn persist(pool: &MySqlPool, draft: &Draft) -> Result<(), AppError> {
                segments   = new.segments",
         );
 
-        builder.build().execute(&mut *tx).await?;
+        builder.build().execute(&mut **tx).await?;
     }
 
     // 步骤 4：删除这次快照里已经不再存在的块（用户在编辑器里删掉的行）。
@@ -529,7 +544,7 @@ pub async fn persist(pool: &MySqlPool, draft: &Draft) -> Result<(), AppError> {
     if draft.blocks.is_empty() {
         sqlx::query("DELETE FROM doc_block WHERE doc_id = ?")
             .bind(draft.doc_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
     } else {
         let mut builder =
@@ -541,10 +556,9 @@ pub async fn persist(pool: &MySqlPool, draft: &Draft) -> Result<(), AppError> {
             separated.push_bind(block_id(block));
         }
         separated.push_unseparated(")");
-        builder.build().execute(&mut *tx).await?;
+        builder.build().execute(&mut **tx).await?;
     }
 
-    tx.commit().await?;
     Ok(())
 }
 

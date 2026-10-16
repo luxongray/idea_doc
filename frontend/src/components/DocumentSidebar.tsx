@@ -23,6 +23,8 @@ import type { DocSummary } from '@/types/document'
  * @param props.onRequestDelete 请求删除回调；由页面负责弹确认框，文档栏不直接删
  * @param props.onMove          拖拽预览：把第 from 篇挪到第 to 篇的位置
  * @param props.onCommitOrder   拖拽结束：把当前顺序提交给后端
+ * @param props.versionsEnabled 当前文档加载完成后启用版本入口
+ * @param props.onOpenVersions 打开当前文档的版本面板
  * @returns 文档栏的 React 元素
  */
 export function DocumentSidebar({
@@ -37,6 +39,8 @@ export function DocumentSidebar({
   onRequestDelete,
   onMove,
   onCommitOrder,
+  versionsEnabled,
+  onOpenVersions,
 }: {
   documents: DocSummary[]
   currentId: string | null
@@ -49,6 +53,8 @@ export function DocumentSidebar({
   onRequestDelete: (doc: DocSummary) => void
   onMove: (from: number, to: number) => void
   onCommitOrder: () => void
+  versionsEnabled: boolean
+  onOpenVersions: () => void
 }) {
   // 正在被拖拽的行下标；null 表示当前没有拖拽
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -125,6 +131,13 @@ export function DocumentSidebar({
 
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-slate-200 bg-slate-50">
+      {/* 当前文档的版本入口固定在左上方，与文档列表共用浅灰视觉。 */}
+      <div className="shrink-0 px-3 pt-4 pb-1">
+        <button type="button" disabled={!versionsEnabled} onClick={onOpenVersions} className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-200/60 hover:text-slate-900 disabled:cursor-default disabled:opacity-40">
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 9a7 7 0 1 1 1.7 5.5M3 4.5V9h4.5M10 6v4l2.5 1.5" /></svg>
+          版本与提交
+        </button>
+      </div>
       {/* 标题与新建入口固定在顶部，不随列表滚动 */}
       <div className="flex shrink-0 items-center justify-between px-4 pt-5 pb-4">
         <h1 className="text-sm font-semibold text-slate-900">我的文档</h1>

@@ -145,6 +145,8 @@ pub async fn rename_document(
     Path(raw_id): Path<String>,
     Json(body): Json<RenameDocumentRequest>,
 ) -> Result<Json<ApiResponse<DocumentSummary>>, AppError> {
+    // 与恢复、草稿保存共享写入顺序，避免缓存标题覆盖恢复结果。
+    let _write_guard = state.document_writes.lock().await;
     // 路径里的 id 来自外部，先校验格式，非法就按参数错误返回
     let doc_id = parse_doc_id(&raw_id)?;
 
@@ -200,6 +202,8 @@ pub async fn delete_document(
     State(state): State<AppState>,
     Path(raw_id): Path<String>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
+    // 删除与后台草稿落库串行处理。
+    let _write_guard = state.document_writes.lock().await;
     // 路径里的 id 来自外部，先校验格式，非法就按参数错误返回
     let doc_id = parse_doc_id(&raw_id)?;
 
@@ -229,6 +233,8 @@ pub async fn save_snapshot(
     Path(raw_id): Path<String>,
     Json(body): Json<SnapshotRequest>,
 ) -> Result<Json<ApiResponse<SnapshotAck>>, AppError> {
+    // 同时保护缓存替换和数据库写入，保持草稿与恢复顺序一致。
+    let _write_guard = state.document_writes.lock().await;
     // 路径里的 id 来自外部，先校验格式，非法就按参数错误返回
     let doc_id = parse_doc_id(&raw_id)?;
 
@@ -267,6 +273,8 @@ pub async fn heartbeat(
     State(state): State<AppState>,
     Path(raw_id): Path<String>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
+    // 心跳可能触发旧草稿落库，同样参与写入协调。
+    let _write_guard = state.document_writes.lock().await;
     // 路径里的 id 来自外部，先校验格式，非法就按参数错误返回
     let doc_id = parse_doc_id(&raw_id)?;
 

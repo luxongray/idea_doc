@@ -43,7 +43,7 @@ export function useDocumentSync({
   title,
   blocks,
   onStateChange,
-}: DocumentSyncOptions): void {
+}: DocumentSyncOptions) {
   // 始终指向最新内容，定时器回调据此读取，避免闭包捕获到旧值
   const latestRef = useRef({ title, blocks })
 
@@ -61,6 +61,9 @@ export function useDocumentSync({
 
   // 同一时刻只允许一个保存请求在飞，避免网络慢时请求互相叠加
   const savingRef = useRef(false)
+  // 版本写入期间暂停推送，并等待已有网络请求真正完成。
+  const pausedRef = useRef(false)
+  const flightRef = useRef<Promise<unknown> | null>(null)
 
   // 回调收进 ref，push 就不必依赖它，引用才能保持稳定
   const onStateChangeRef = useRef(onStateChange)
@@ -87,7 +90,7 @@ export function useDocumentSync({
   const push = useCallback(
     async (flush: boolean) => {
       // 已有请求在飞时直接跳过，下一次定时检查会补上
-      if (savingRef.current) {
+      if (savingRef.current || pausedRef.current) {
         return
       }
 
@@ -104,7 +107,9 @@ export function useDocumentSync({
       onStateChangeRef.current('saving')
 
       try {
-        await saveSnapshot(documentId, snapshot.title, snapshot.blocks, flush)
+        const flight = saveSnapshot(documentId, snapshot.title, snapshot.blocks, flush)
+        flightRef.current = flight
+        await flight
         syncedRef.current = fingerprint
         // 已经整体落库，就不需要离开时再补一次
         if (flush) {
@@ -116,6 +121,7 @@ export function useDocumentSync({
         onStateChangeRef.current('error')
       } finally {
         savingRef.current = false
+        flightRef.current = null
       }
     },
     [documentId],
@@ -145,7 +151,7 @@ export function useDocumentSync({
   // 这里刻意不复用 push：即便此刻正好有请求在飞，也要尽力把最新内容送出去。
   useEffect(() => {
     return () => {
-      if (!pendingRef.current) {
+      if (!pendingRef.current || pausedRef.current) {
         return
       }
 
@@ -161,7 +167,7 @@ export function useDocumentSync({
   // 关闭 / 刷新标签页时再补一发 keepalive 请求，尽量免去后端等待心跳超时的那几秒
   useEffect(() => {
     const handlePageHide = () => {
-      if (!pendingRef.current) {
+      if (!pendingRef.current || pausedRef.current) {
         return
       }
 
@@ -172,4 +178,32 @@ export function useDocumentSync({
     window.addEventListener('pagehide', handlePageHide)
     return () => window.removeEventListener('pagehide', handlePageHide)
   }, [documentId])
+
+  /**
+   * 暂停自动保存并等待已发出的快照结束。
+   * @returns 保存链路已静止时完成的 Promise
+   */
+  const pause = useCallback(async () => {
+    // 先关入口，再等待在途请求，恢复请求才不会被旧快照超车。
+    pausedRef.current = true
+    await flightRef.current?.catch(() => undefined)
+  }, [])
+
+  /** 恢复定时同步，失败的版本操作也必须调用。 */
+  const resume = useCallback(() => { pausedRef.current = false }, [])
+
+  /**
+   * 将已经落库的正文设为新的同步基线。
+   * @param nextTitle 已持久化标题
+   * @param nextBlocks 已持久化块列表
+   */
+  const accept = useCallback((nextTitle: string, nextBlocks: DocBlock[]) => {
+    // 同步更新引用，卸载与 pagehide 无需等待下一次 React effect。
+    latestRef.current = { title: nextTitle, blocks: nextBlocks }
+    syncedRef.current = JSON.stringify(nextBlocks)
+    pendingRef.current = false
+    onStateChangeRef.current('saved')
+  }, [])
+
+  return { pause, resume, accept }
 }

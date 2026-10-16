@@ -17,4 +17,6 @@ pub struct AppState {
     pub config: Arc<AppConfig>,
     /// 文档草稿缓存，暂存前端推送但尚未落库的最新快照
     pub drafts: Arc<DraftStore>,
+    /// 串行协调草稿落库、缓存替换与历史恢复，避免旧草稿覆盖恢复结果
+    pub document_writes: Arc<tokio::sync::Mutex<()>>,
 }

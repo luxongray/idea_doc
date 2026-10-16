@@ -13,6 +13,9 @@ import { DocOutline } from '@/components/DocOutline'
 import { DocumentEditor } from '@/components/DocumentEditor'
 import { DocumentSidebar } from '@/components/DocumentSidebar'
 import { SaveToast } from '@/components/SaveToast'
+import { VersionPanel } from '@/components/VersionPanel'
+import { commitVersion, restoreVersion } from '@/api/version'
+import type { VersionContent } from '@/api/version'
 import { useDocumentBlocks } from '@/hooks/useDocumentBlocks'
 import { useDocumentSync } from '@/hooks/useDocumentSync'
 import type { SaveState } from '@/hooks/useDocumentSync'
@@ -50,6 +53,8 @@ export function DocumentPage() {
 
   // 角落里的保存提示
   const [saveState, setSaveState] = useState<SaveState>('idle')
+  // 入口位于侧栏，面板仍由当前编辑器提供实时正文。
+  const [versionDocumentId, setVersionDocumentId] = useState<string | null>(null)
 
   // 待确认删除的文档；非空时弹出自绘的确认框
   const [pendingDelete, setPendingDelete] = useState<DocSummary | null>(null)
@@ -226,12 +231,18 @@ export function DocumentPage() {
         onRequestDelete={handleRequestDelete}
         onMove={handleMove}
         onCommitOrder={handleCommitOrder}
+        versionsEnabled={doc?.id === currentId && currentId !== null}
+        onOpenVersions={() => setVersionDocumentId(currentId)}
       />
 
       {/* 正文与大纲居中于剩余区域；正文区隐藏自身滚动条，只保留大纲那一条 */}
       <div className="mx-auto flex h-full w-full max-w-[1680px] gap-12 px-6 lg:px-10">
         {doc && doc.id === currentId ? (
-          <DocumentContent key={doc.id} doc={doc} onSaveStateChange={setSaveState} />
+          <DocumentContent key={doc.id} doc={doc} versionsOpen={versionDocumentId === doc.id} onCloseVersions={() => setVersionDocumentId(null)} onSaveStateChange={setSaveState} onRestored={content => {
+            // 同步正文与侧栏标题，恢复结果在切换文档前即可见。
+            setDoc(previous => previous ? { ...previous, ...content } : previous)
+            setDocuments(previous => previous.map(item => item.id === doc.id ? { ...item, title: content.title } : item))
+          }} />
         ) : (
           <DocumentPlaceholder
             loading={docLoading}
@@ -282,17 +293,28 @@ export function DocumentPage() {
  *
  * @param props.doc               当前文档（含全部块）
  * @param props.onSaveStateChange 保存状态变化回调
+ * @param props.onRestored 恢复后同步页面文档与侧栏标题
+ * @param props.versionsOpen 是否展示版本面板
+ * @param props.onCloseVersions 关闭版本面板回调
  * @returns 正文与大纲两个区域的 React 元素
  */
 function DocumentContent({
   doc,
   onSaveStateChange,
+  onRestored,
+  versionsOpen,
+  onCloseVersions,
 }: {
   doc: DocDocument
   onSaveStateChange: (state: SaveState) => void
+  onRestored: (content: VersionContent) => void
+  versionsOpen: boolean
+  onCloseVersions: () => void
 }) {
   // 文档内容与撤销栈
-  const { blocks, commit, undo, redo } = useDocumentBlocks(doc.blocks)
+  const { blocks, commit, undo, redo, reset } = useDocumentBlocks(doc.blocks)
+  const [editorEpoch, setEditorEpoch] = useState(0)
+  const content = useMemo(() => ({ title: doc.title, blocks }), [doc.title, blocks])
 
   // 由文档块派生出大纲树与标题 id 列表
   const outline = useMemo(() => buildOutline(blocks), [blocks])
@@ -303,12 +325,42 @@ function DocumentContent({
   const { activeId, jumpTo } = useScrollSpy(headingIds, scrollContainerRef)
 
   // 自动保存：快照推送 + 心跳 + 离开时立刻落库
-  useDocumentSync({
+  const sync = useDocumentSync({
     documentId: doc.id,
     title: doc.title,
     blocks,
     onStateChange: onSaveStateChange,
   })
+
+  /**
+   * 手动提交当前编辑器状态，先排空自动保存请求。
+   * @returns 面向用户的结果提示
+   */
+  async function handleCommitVersion() {
+    // 等待旧快照结束后提交完整内容，避免事务后缓存仍留旧草稿。
+    await sync.pause()
+    try {
+      const result = await commitVersion(doc.id, content)
+      sync.accept(content.title, content.blocks)
+      return result.created ? `已提交 V${result.versionNo}` : '没有业务变化，未创建新版本'
+    } finally { sync.resume() }
+  }
+
+  /**
+   * 将历史内容恢复为草稿并清空本地撤销历史。
+   * @param version 要恢复的业务版本号
+   */
+  async function handleRestoreVersion(version: number) {
+    // 暂停后所有旧快照都已完成，再请求恢复并同步更新卸载保存基线。
+    await sync.pause()
+    try {
+      const restored = await restoreVersion(doc.id, version)
+      const nextBlocks = reset(restored.blocks)
+      sync.accept(restored.title, nextBlocks)
+      onRestored({ ...restored, blocks: nextBlocks })
+      setEditorEpoch(value => value + 1)
+    } finally { sync.resume() }
+  }
 
   return (
     <>
@@ -317,7 +369,7 @@ function DocumentContent({
         className="min-w-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         <div className="mx-auto max-w-[800px] py-16">
-          <DocumentEditor blocks={blocks} onChange={commit} onUndo={undo} onRedo={redo} />
+          <DocumentEditor key={editorEpoch} blocks={blocks} onChange={commit} onUndo={undo} onRedo={redo} />
 
           {/*
             正文末尾的占位空白：高度取「视口高 - 标题对齐偏移」，
@@ -334,6 +386,7 @@ function DocumentContent({
       <aside className="hidden w-64 shrink-0 py-16 lg:block">
         <DocOutline nodes={outline} activeId={activeId} onSelect={jumpTo} />
       </aside>
+      {versionsOpen && <VersionPanel documentId={doc.id} content={content} onClose={onCloseVersions} onCommit={handleCommitVersion} onRestore={handleRestoreVersion} />}
     </>
   )
 }

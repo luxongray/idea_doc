@@ -47,6 +47,7 @@ VALUES ('db.comment', 'idea_doc —— 个人自用文档系统业务库，统�
 CREATE TABLE IF NOT EXISTS `doc` (
     `id`         CHAR(36)     CHARACTER SET ascii NOT NULL COMMENT '文档主键，UUIDv7 的字符串形式（36 位小写、带连字符），由应用层生成',
     `title`      VARCHAR(255) NOT NULL COMMENT '文档标题',
+    `latest_version` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '最新手动提交版本号，0 表示尚未提交',
     `sort_order` INT          NOT NULL DEFAULT 0 COMMENT '文档在侧边栏中的排列序号，越小越靠前，由拖拽排序维护',
     `is_deleted` TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 未删除，1 已删除',
     `created_at` DATETIME     NOT NULL COMMENT '创建时间，由应用层写入北京时间',
@@ -56,6 +57,17 @@ CREATE TABLE IF NOT EXISTS `doc` (
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COMMENT = '文档：一篇文档一行，删除采用逻辑删除，展示顺序由 sort_order 决定';
+
+-- 兼容已有库：重复执行建表脚本时，仅在缺失时补上版本指针。
+SET @version_column_sql = IF(
+    EXISTS(SELECT 1 FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'doc' AND COLUMN_NAME = 'latest_version'),
+    'SELECT 1',
+    'ALTER TABLE doc ADD COLUMN latest_version BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT ''最新手动提交版本号，0 表示尚未提交'' AFTER title'
+);
+PREPARE version_column_stmt FROM @version_column_sql;
+EXECUTE version_column_stmt;
+DEALLOCATE PREPARE version_column_stmt;
 
 -- -------------------------------------------------------------
 -- doc_block：文档块表
@@ -89,3 +101,22 @@ CREATE TABLE IF NOT EXISTS `doc_block` (
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COMMENT = '文档块：一个块一行，父子关系由 parent_id 表达，同级顺序由 sort_index 表达';
+
+-- 手动提交的业务版本链；普通草稿保存不写入此表。
+CREATE TABLE IF NOT EXISTS `doc_version` (
+    `doc_id` CHAR(36) CHARACTER SET ascii NOT NULL COMMENT '所属文档 UUID',
+    `version_no` BIGINT UNSIGNED NOT NULL COMMENT '从 1 开始递增的业务版本号',
+    `frontiers` JSON NOT NULL COMMENT 'Loro 历史位置，不包含正文',
+    `update_data` LONGBLOB NOT NULL COMMENT '相对上次提交的 Loro 二进制增量',
+    `created_at` DATETIME NOT NULL COMMENT '提交时间，由应用层写入北京时间',
+    PRIMARY KEY (`doc_id`, `version_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文档手动提交的线性版本链';
+
+-- 每篇文档保留一份定期更新的完整历史快照，不裁剪早期版本。
+CREATE TABLE IF NOT EXISTS `doc_loro_snapshot` (
+    `doc_id` CHAR(36) CHARACTER SET ascii NOT NULL COMMENT '所属文档 UUID',
+    `version_no` BIGINT UNSIGNED NOT NULL COMMENT '快照覆盖的最新业务版本号',
+    `snapshot_data` LONGBLOB NOT NULL COMMENT '包含完整历史的 Loro 二进制快照',
+    `updated_at` DATETIME NOT NULL COMMENT '快照更新时间，由应用层写入北京时间',
+    PRIMARY KEY (`doc_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Loro 完整历史加载检查点';

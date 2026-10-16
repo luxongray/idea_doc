@@ -25,3 +25,4 @@ Thumbs.db
 logs/
 *.tmp
 .playwright-mcp
+todo.txt

@@ -41,6 +41,8 @@ export interface DocumentBlocksController {
   undo: () => void
   /** 重做被撤销的变更 */
   redo: () => void
+  /** 替换正文并清空撤销栈，返回编辑器可用的非空块列表 */
+  reset: (next: DocBlock[]) => DocBlock[]
 }
 
 /**
@@ -134,5 +136,21 @@ export function useDocumentBlocks(initialBlocks: DocBlock[]): DocumentBlocksCont
     setBlocks(next)
   }, [])
 
-  return { blocks, commit, undo, redo }
+  /**
+   * 恢复历史正文并建立新的撤销起点。
+   * @param next 恢复后的块列表
+   * @returns 编辑器实际使用的块列表
+   */
+  const reset = useCallback((next: DocBlock[]) => {
+    // 丢弃恢复前的本地历史，防止一次撤销重新带回旧草稿。
+    const restored = ensureAtLeastOneBlock(next)
+    pastRef.current = []
+    futureRef.current = []
+    inputChainRef.current = false
+    currentRef.current = restored
+    setBlocks(restored)
+    return restored
+  }, [])
+
+  return { blocks, commit, undo, redo, reset }
 }
